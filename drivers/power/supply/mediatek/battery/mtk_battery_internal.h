@@ -289,6 +289,7 @@ enum Fg_data_type {
 	FG_DATA_TYPE_NUMBER
 };
 
+#define DATA_SIZE 2048
 struct fgd_cmd_param_t_6 {
 	unsigned int type;
 	unsigned int total_size;
@@ -893,6 +894,10 @@ struct mtk_battery {
 	int bat_cycle_thr;
 	int bat_cycle_car;
 	int bat_cycle_ncar;
+#if defined (CONFIG_W2_CHARGER_PRIVATE)
+	int *batt_cycle_fv_cfg;
+	int fv_levels;
+#endif
 
 /* cust req ocv data */
 	int algo_qmax;

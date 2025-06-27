@@ -57,6 +57,16 @@ int hardwareinfo_set_prop(int cmd, const char *name)
 	return 0;
 }
 
+//+ bug 828710, liuling 2023.03.13 add get hardwareinfo, start
+char* hardwareinfo_get_prop(int cmd)
+{
+    if(cmd < 0 || cmd >= HARDWARE_MAX_ITEM)
+        return NULL;
+
+    return hardwareinfo_name[cmd];
+}
+//- bug 828710, liuling 2023.03.13 add get hardwareinfo, end
+
 int __weak tid_hardware_info_get(char *buf, int size)
 {
 	snprintf(buf, size, "touch info interface is not ready\n");
@@ -87,6 +97,22 @@ static char* boardid_get(void)
 	return s1;
 }
 
+/* +Req S96818AA1-1936,shenwenlei.wt,20230423, audio bringup */
+#ifdef CONFIG_WT_PROJECT_AUDIO_PA
+char* boardid_get_n28(void)
+{
+        char* s1= "";
+
+        s1 = boardid_get();
+
+        printk("board_id found in cmdline : %s\n", board_id);
+
+        return s1;
+}
+EXPORT_SYMBOL_GPL(boardid_get_n28);
+#endif
+/* -Req S96818AA1-1936,shenwenlei.wt,20230423, audio bringup */
+
 //Bug 438050 njm@wt, 20190415 start
 static char* hwid_get(void)
 {
@@ -115,6 +141,8 @@ static char* hwid_get(void)
 //Bug 432505 njm@wt, 20180314 end
 
 /*get lcm serialnum */
+/* +Req S96818AA1-1936,liuzhizun2.wt,modify,2023/06/07, td4160 read panel sn*/
+unsigned char n28_lcm_sn[20];
 char lcm_serialnum[HARDWARE_MAX_ITEM_LONGTH];
 static char* hw_lcm_serialnum_get(void)
 {
@@ -122,10 +150,19 @@ static char* hw_lcm_serialnum_get(void)
 	char* s2="not found";
 	char *ptr =NULL;
 
-	s1 = strstr(saved_command_line, "lcm_serialnum:");
-	if(!s1) {
-		printk("lcm_serialnum not found in cmdline\n");
-		return s2;
+	if ((strcmp(Lcm_name, "n28_td4160_dsi_vdo_hdp_xinxian_inx") == 0)
+			|| (strcmp(Lcm_name, "n28_td4160_dsi_vdo_hdp_boe_boe") == 0)) {
+		s1 = n28_lcm_sn;
+		strncpy(lcm_serialnum, n28_lcm_sn, 20);
+		lcm_serialnum[20] = '\0';
+		printk("lcm_serialnum found in tp : %s\n", lcm_serialnum);
+		return s1;
+	} else {
+		s1 = strstr(saved_command_line, "lcm_serialnum:");
+		if(!s1) {
+			printk("lcm_serialnum not found in cmdline\n");
+			return s2;
+		}
 	}
 	s1 += strlen("lcm_serialnum:");
 	ptr=s1;
@@ -138,6 +175,7 @@ static char* hw_lcm_serialnum_get(void)
 	s1 = lcm_serialnum;
 	return s1;
 }
+/* -Req S96818AA1-1936,liuzhizun2.wt,modify,2023/06/07, td4160 read panel sn*/
 
 static long hardwareinfo_ioctl(struct file *file, unsigned int cmd,unsigned long arg)
 {
@@ -296,6 +334,16 @@ static long hardwareinfo_ioctl(struct file *file, unsigned int cmd,unsigned long
 		hardwareinfo_set_prop(HARDWARE_LCD_SERIALNUM, lcm_serialnum);
 		hardwareinfo_num = HARDWARE_LCD_SERIALNUM;
 		break;
+#ifdef CONFIG_N28_CHARGER_PRIVATE
+		/* +Req S96818AA1-5169,zhouxiaopeng2.wt,20230519, mode information increased */
+	case HARDWARE_PD_CHARGER_GET:
+		hardwareinfo_num = HARDWARE_PD_CHARGER;
+		break;
+	case HARDWARE_CHARGER_PUMP_GET:
+		hardwareinfo_num = HARDWARE_CHARGER_PUMP;
+		break;
+		/* -Req S96818AA1-5169,zhouxiaopeng2.wt,20230519, mode information increased */
+#endif
 	default:
 		ret = -EINVAL;
 		goto err_out;

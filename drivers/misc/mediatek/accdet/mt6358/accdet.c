@@ -43,6 +43,13 @@
 #include "sec_accdet_sysfs_cb.h"
 #endif
 
+/* +S96818AA1-1936,daijun1.wt,add,2023/07/20,n28-tp td4160 add ear_phone mode */
+#if defined(CONFIG_WT_PROJECT_S96818AA1) || defined(CONFIG_WT_PROJECT_S96818BA1)
+#include "gcore_drv_common.h"
+#include "../TD4160/omnivision_tcm_core.h"
+#include "../NT36528/nt36xxx.h"
+#endif
+/* -S96818AA1-1936,daijun1.wt,add,2023/07/20,n28-tp td4160 add ear_phone mode */
 /********************grobal variable definitions******************/
 #if PMIC_ACCDET_CTP
 #define CONFIG_ACCDET_EINT_IRQ
@@ -151,7 +158,11 @@ static struct class *accdet_class;
 static struct device *accdet_device;
 static int s_button_status;
 static int accdet_pmic;
-
+/* +Req S96818AA1-2210 shenwenlei.wt 20230501 add headphone status node */
+#if defined(CONFIG_WT_PROJECT_HEADPHONE_NODE)
+struct device *accdet_earjack;
+#endif
+/* -Req S96818AA1-2210 shenwenlei.wt 20230501 add headphone status node */
 /* accdet input device to report cable type and key event */
 static struct input_dev *accdet_input_dev;
 
@@ -684,7 +695,13 @@ static ssize_t set_headset_mode_store(struct device_driver *ddri,
 	return count;
 }
 
+/* +Req S96818AA1-2210 shenwenlei.wt 20230501 add headphone status node */
+#if defined(CONFIG_WT_PROJECT_HEADPHONE_NODE)
+static ssize_t states_show(struct device_driver *ddri, char *buf)
+#else
 static ssize_t state_show(struct device_driver *ddri, char *buf)
+#endif
+/* -Req S96818AA1-2210 shenwenlei.wt 20230501 add headphone status node */
 {
 	char temp_type = (char)cable_type;
 	int ret = 0;
@@ -704,14 +721,26 @@ static DRIVER_ATTR_WO(start_debug);
 static DRIVER_ATTR_WO(set_reg);
 static DRIVER_ATTR_RW(dump_reg);
 static DRIVER_ATTR_WO(set_headset_mode);
+/* +Req S96818AA1-2210 shenwenlei.wt 20230501 add headphone status node */
+#if defined(CONFIG_WT_PROJECT_HEADPHONE_NODE)
+static DRIVER_ATTR_RO(states);
+#else
 static DRIVER_ATTR_RO(state);
+#endif
+/* -Req S96818AA1-2210 shenwenlei.wt 20230501 add headphone status node */
 
 static struct driver_attribute *accdet_attr_list[] = {
 	&driver_attr_start_debug,
 	&driver_attr_set_reg,
 	&driver_attr_dump_reg,
 	&driver_attr_set_headset_mode,
+/* +Req S96818AA1-2210 shenwenlei.wt 20230501 add headphone status node */
+#if defined(CONFIG_WT_PROJECT_HEADPHONE_NODE)
+	&driver_attr_states,
+#else
 	&driver_attr_state,
+#endif
+/* -Req S96818AA1-2210 shenwenlei.wt 20230501 add headphone status node */
 };
 
 static int accdet_create_attr(struct device_driver *driver)
@@ -1008,6 +1037,19 @@ static void send_accdet_status_event(u32 cable_type, u32 status)
 		input_sync(accdet_input_dev);
 		pr_info("%s HEADPHONE(3-pole) %s\n", __func__,
 			status ? "PlugIn" : "PlugOut");
+/* +S96818AA1-1936,daijun1.wt,add,2023/07/20,n28-tp td4160 add ear_phone mode */
+#if defined(CONFIG_WT_PROJECT_S96818AA1) || defined(CONFIG_WT_PROJECT_S96818BA1)
+		if (status == 0) {
+			gcore_extern_notify_event(10);
+			ovt_set_headphone_mode(0);
+			nvt_set_headphone_mode(0);
+		} else if (status == 1) {
+			gcore_extern_notify_event(9);
+			ovt_set_headphone_mode(1);
+			nvt_set_headphone_mode(1);
+		}
+#endif
+/* -S96818AA1-1936,daijun1.wt,add,2023/07/20,n28-tp td4160 add ear_phone mode */
 		break;
 	case HEADSET_MIC:
 		/* when plug 4-pole out, 3-pole plug out should also be
@@ -1021,6 +1063,19 @@ static void send_accdet_status_event(u32 cable_type, u32 status)
 		input_sync(accdet_input_dev);
 		pr_info("%s MICROPHONE(4-pole) %s\n", __func__,
 			status ? "PlugIn" : "PlugOut");
+/* +S96818AA1-1936,daijun1.wt,add,2023/07/20,n28-tp td4160 add ear_phone mode */
+#if defined(CONFIG_WT_PROJECT_S96818AA1) || defined(CONFIG_WT_PROJECT_S96818BA1)
+		if (status == 0) {
+                        gcore_extern_notify_event(10);
+						ovt_set_headphone_mode(0);
+						nvt_set_headphone_mode(0);
+                } else if (status == 1) {
+                        gcore_extern_notify_event(9);
+						ovt_set_headphone_mode(1);
+						nvt_set_headphone_mode(1);
+                }
+#endif
+/* -S96818AA1-1936,daijun1.wt,add,2023/07/20,n28-tp td4160 add ear_phone mode */
 		/* when press key for a long time then plug in
 		 * even recoginized as 4-pole
 		 * disable micbias timer still timeout after 6s
@@ -2635,6 +2690,18 @@ static void accdet_init_once(void)
 	pwrap_write(ACCDET_CTRL, pmic_read(ACCDET_CTRL) | ACCDET_EINT0_EN_B2);
 #endif
 
+	/* +Req S96818AA1-1936 shenwenlei.wt 20230503 modify accdet 500k@2v */
+	if (water_r == 0) {
+		/* For normal mode, select VTH to 2v and 500k, use internal resitance,
+		* 219C bit[10][11][12] = 1
+		*/
+		pmic_write(AUDENC_ANA_CON11,
+			pmic_read(AUDENC_ANA_CON11) | 0x1C00);
+		pr_info("%s: register AUDENC_ANA_CON11 %x=%x",
+			 __func__, AUDENC_ANA_CON11, pmic_read(AUDENC_ANA_CON11));
+	}
+	/* -Req S96818AA1-1936 shenwenlei.wt 20230503 modify accdet 500k@2v */
+
 #elif defined CONFIG_ACCDET_SUPPORT_EINT1
 	/* set eint0 pwm width&thresh, and enable eint0 PWM */
 	reg = pmic_read(ACCDET_EINT1_CTL);
@@ -2745,6 +2812,19 @@ static void delay_init_timerhandler(struct timer_list *t)
 		pr_info("%s inited dts fail\n", __func__);
 }
 
+/* +Req S96818AA1-2210 shenwenlei.wt 20230501 add headphone status node */
+#if defined(CONFIG_WT_PROJECT_HEADPHONE_NODE)
+static ssize_t state_show(struct device *dev,
+			struct device_attribute *attr, char *buf)
+{
+	int accdet_AB = 0;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", accdet_AB);
+};
+static DEVICE_ATTR_RO(state);
+#endif
+/* -Req S96818AA1-2210 shenwenlei.wt 20230501 add headphone status node */
+
 int mt_accdet_probe(struct platform_device *dev)
 {
 	int ret;
@@ -2778,7 +2858,32 @@ int mt_accdet_probe(struct platform_device *dev)
 		pr_notice("%s class_create fail.\n", __func__);
 		goto err_class_create;
 	}
-
+/* +Req S96818AA1-2210 shenwenlei.wt 20230501 add headphone status node */
+#if defined(CONFIG_WT_PROJECT_HEADPHONE_NODE)
+	ret = alloc_chrdev_region(&accdet_devno, 0, 1, ACCDET_AUDIO_DEVNAME);
+	if (ret)
+		goto err_chrdevregion;
+	// class create
+	accdet_class = class_create(THIS_MODULE, ACCDET_AUDIO_DEVNAME);
+	if (!accdet_class) {
+		ret = -1;
+		pr_notice("%s class_create fail.\n", __func__);
+		goto err_class_create;
+	}
+	//device create
+	accdet_earjack = device_create(accdet_class, NULL, accdet_devno,
+		NULL, ACCDET_AUDIO_EARJACK_DEVNAME);
+	if (!accdet_earjack) {
+		ret = -1;
+		pr_notice("%s device_create fail.\n", __func__);
+		goto err_device_create;
+	}
+	//device create file
+	ret = device_create_file(accdet_earjack, &dev_attr_state);
+	if (ret < 0)
+		goto err_device_create;
+#endif
+/* -Req S96818AA1-2210 shenwenlei.wt 20230501 add headphone status node */
 	/* create device under /dev node
 	 * if we want auto creat device node, we must call this
 	 */

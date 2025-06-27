@@ -66,6 +66,11 @@ int batt_full_capacity = 100;
 extern void wt_batt_full_capacity_check(void);
 //-bug 790826,yangchaojun,wt,add batt_full_capacity node
 #endif
+/*+S96616AA3-534 lijiawei,wt.battery cycle function and otg control function*/
+#if defined (CONFIG_N26_CHARGER_PRIVATE)
+static struct charger_device *primary_charger;
+#endif
+/*-S96616AA3-534 lijiawei,wt.battery cycle function and otg control function*/
 struct tag_bootmode {
 	u32 size;
 	u32 tag;
@@ -342,6 +347,31 @@ int Get_get_charger()
 }
 #endif
 //-Bug682591,caoyachun.wt,ADD,20220322,battery misc event
+
+
+//+Bug805088,yangchaojun.wt,add,high temperature charging cannot be fully charged
+#if defined (CONFIG_N23_CHARGER_PRIVATE)
+#define jeita_hightemp_cv 4200000
+int get_jeita_cv(void)
+{
+	struct mtk_charger *info;
+	struct power_supply *psy;
+	int ret;
+	psy = power_supply_get_by_name("mtk-master-charger");
+	if (psy == NULL || IS_ERR(psy)) {
+		pr_notice("%s Couldn't get psy\n", __func__);
+		return -1;
+	} else {
+		info = (struct mtk_charger *)power_supply_get_drvdata(psy);
+	}
+	ret = info->sw_jeita.cv;
+	bm_err("jeita_hightemp_cv: %d\n", ret);
+	return ret;
+}
+#endif
+//-Bug805088,yangchaojun.wt,add,high temperature charging cannot be fully charged
+
+
 
 int wakeup_fg_algo_cmd(
 	struct mtk_battery *gm, unsigned int flow_state, int cmd, int para1)
@@ -829,9 +859,22 @@ static void mtk_battery_external_power_changed(struct power_supply *psy)
 
 		if (status.intval == POWER_SUPPLY_STATUS_FULL
 			&& gm->b_EOC != true) {
+//+Bug805088,yangchaojun.wt,add,high temperature charging cannot be fully charged		
+#if defined (CONFIG_N23_CHARGER_PRIVATE)		
+			if(get_jeita_cv() == jeita_hightemp_cv) {
+				gm->b_EOC = false;
+				bm_err("jeita_hightemp_cv\n");
+			} else {
+				bm_err("POWER_SUPPLY_STATUS_FULL\n");
+				gm->b_EOC = true;
+				notify_fg_chr_full(gm);
+			}
+#else
 			bm_err("POWER_SUPPLY_STATUS_FULL\n");
 			gm->b_EOC = true;
 			notify_fg_chr_full(gm);
+#endif
+//-Bug805088,yangchaojun.wt,add,high temperature charging cannot be fully charged
 		} else
 			gm->b_EOC = false;
 
@@ -1554,6 +1597,32 @@ int wt_set_batt_cycle_fv(struct mtk_battery *gm)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(wt_set_batt_cycle_fv);
+/*+S96616AA3-534 lijiawei,wt.battery cycle function and otg control function*/
+#elif defined (CONFIG_N26_CHARGER_PRIVATE)
+int wt_set_batt_cycle_fv(struct mtk_battery *gm,bool updata)
+{
+	int i, cycle = 0;
+	static int cycle_fv = 0;
+
+	if (!updata)
+		return cycle_fv;
+
+	if (gm->bat_cycle >= 0 && gm->bat_cycle < 999999)
+		cycle = gm->bat_cycle;
+	bm_err("WT cycle %d\n", cycle);
+	if (gm->batt_cycle_fv_cfg && gm->fv_levels) {
+		for (i = 0; i < gm->fv_levels; i += 3) {
+			if ((cycle >= gm->batt_cycle_fv_cfg[i]) && (cycle <= gm->batt_cycle_fv_cfg[i + 1])) {
+				chr_err("WT set cv = %d\n", gm->batt_cycle_fv_cfg[i + 2]);
+				cycle_fv = gm->batt_cycle_fv_cfg[i + 2];
+				return gm->batt_cycle_fv_cfg[i + 2];
+			}
+		}
+	}
+	return 0;
+}
+EXPORT_SYMBOL_GPL(wt_set_batt_cycle_fv);
+/*-S96616AA3-534 lijiawei,wt.battery cycle function and otg control function*/
 #endif
 
 void fg_custom_init_from_header(struct mtk_battery *gm)
@@ -2151,6 +2220,28 @@ void fg_custom_init_from_dts(struct platform_device *dev,
 	}
 
 	cycle_fv = wt_set_batt_cycle_fv(gm);
+/*+S96616AA3-534 lijiawei,wt.battery cycle function and otg control function*/
+#elif defined (CONFIG_N26_CHARGER_PRIVATE)
+	int cycle_fv, byte_len;
+
+	if (of_find_property(np, "wt,batt-cycle-ranges", &byte_len)) {
+		gm->batt_cycle_fv_cfg = devm_kzalloc(&dev->dev, byte_len,
+			GFP_KERNEL);
+		if (gm->batt_cycle_fv_cfg) {
+			gm->fv_levels = byte_len / sizeof(u32);
+			ret = of_property_read_u32_array(np,
+				"wt,batt-cycle-ranges",
+				gm->batt_cycle_fv_cfg,
+				gm->fv_levels);
+			if (ret < 0) {
+				bm_err("Couldn't read battery protect limits ret = %d\n", ret);
+				gm->batt_cycle_fv_cfg = NULL;
+			}
+		}
+	}
+
+	cycle_fv = wt_set_batt_cycle_fv(gm,true);
+/*-S96616AA3-534 lijiawei,wt.battery cycle function and otg control function*/
 #endif
 	gm->battery_id = fgauge_get_profile_id();
 	bm_err("battery id = %d\n", gm->battery_id);
@@ -2532,6 +2623,17 @@ void fg_custom_init_from_dts(struct platform_device *dev,
 			i*TOTAL_BATTERY_NUMBER + gm->battery_id,
 			&(fg_table_cust_data->fg_profile[i].pseudo1),
 			UNIT_TRANS_100);
+/*+S96616AA3-534 lijiawei,wt.battery cycle function and otg control function*/
+#if defined (CONFIG_N26_CHARGER_PRIVATE)
+		if (cycle_fv != 0) {
+			sprintf(node_name, "g_FG_PSEUDO100_cv%d", cycle_fv / 1000);
+			fg_read_dts_val_by_idx(np, node_name,
+				i*TOTAL_BATTERY_NUMBER+gm->battery_id,
+				&(fg_table_cust_data->fg_profile[i].pseudo100),
+				UNIT_TRANS_100);
+		} else
+#endif
+/*-S96616AA3-534 lijiawei,wt.battery cycle function and otg control function*/
 		fg_read_dts_val_by_idx(np, "g_FG_PSEUDO100",
 			i*TOTAL_BATTERY_NUMBER + gm->battery_id,
 			&(fg_table_cust_data->fg_profile[i].pseudo100),
@@ -2673,7 +2775,7 @@ void battery_update(struct mtk_battery *gm)
 {
 	struct battery_data *bat_data = &gm->bs_data;
 	struct power_supply *bat_psy = bat_data->psy;
-#if defined (CONFIG_N23_CHARGER_PRIVATE) || defined (CONFIG_N21_CHARGER_PRIVATE)
+#if defined (CONFIG_N23_CHARGER_PRIVATE) || defined (CONFIG_N21_CHARGER_PRIVATE) || defined (CONFIG_N26_CHARGER_PRIVATE)
 	struct mtk_charger *info;
 	struct power_supply *psy;
 	psy = power_supply_get_by_name("mtk-master-charger");
@@ -2697,7 +2799,7 @@ void battery_update(struct mtk_battery *gm)
 
 	if (battery_get_int_property(BAT_PROP_DISABLE))
 		bat_data->bat_capacity = 50;
-#if defined (CONFIG_N23_CHARGER_PRIVATE) || defined (CONFIG_N21_CHARGER_PRIVATE)
+#if defined (CONFIG_N23_CHARGER_PRIVATE) || defined (CONFIG_N21_CHARGER_PRIVATE) || defined (CONFIG_N26_CHARGER_PRIVATE)
 	if((NULL != psy) && (NULL != info)) {
 		if(info->notify_code & CHG_BAT_OT_STATUS) {
 			bat_data->bat_health = POWER_SUPPLY_HEALTH_OVERHEAT;
@@ -3882,10 +3984,16 @@ static int mtk_power_misc_psy_event(
 				nb, struct shutdown_controller, psy_nb);
 			if (gm->cur_bat_temp >= BATTERY_SHUTDOWN_TEMPERATURE) {
 				bm_debug(
-					"%d battery temperature >= %d,shutdown",
-					gm->cur_bat_temp, tmp);
-
+					"%d battery temperature >= %d, bootmode = %d, shutdown",
+					gm->cur_bat_temp, tmp, gm->bootmode);
+#if defined (CONFIG_N26_CHARGER_PRIVATE)
+			if (gm->bootmode == 8)
+				bm_debug("power off,not charging!\n");
+			else
 				wake_up_overheat(sdc);
+#else
+				wake_up_overheat(sdc);
+#endif
 			}
 		}
 	}

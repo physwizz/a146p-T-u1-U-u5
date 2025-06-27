@@ -950,7 +950,11 @@ static ssize_t flash_name_show(struct device *dev, struct device_attribute *attr
             else if (strncmp(card->cid.prod_name, "DV6DBB", strlen("DV6DBB")) == 0)
 		emcp_name = "KMDV6001DB_B625";
 //+bug 720069, houdujing.wt, add, 2022.2.12, add emmc flash life_time, end
-            else
+//+bug S96818AA1-5244, wangchunhua2.wt, add, 2023.5.26, add emmc flash life_time, start
+	    else if (strncmp(card->cid.prod_name, "3V6CBB", strlen("3V6CBB")) == 0)
+		emcp_name = "KM3V6001CB_B708";
+//-bug S96818AA1-5244, wangchunhua2.wt, add, 2023.5.26, add emmc flash life_time, end
+	    else
                 emcp_name = NULL;
             break;
         case 0x45:
@@ -2265,9 +2269,12 @@ static int _mmc_suspend(struct mmc_host *host, bool is_suspend)
 		goto out;
 
 	if (mmc_can_poweroff_notify(host->card) &&
-		((host->caps2 & MMC_CAP2_FULL_PWR_CYCLE) || !is_suspend))
+		((host->caps2 & MMC_CAP2_FULL_PWR_CYCLE) || !is_suspend)) {
 		err = mmc_poweroff_notify(host->card, notify_type);
-	else if (mmc_can_sleep(host->card))
+		/* Add a delay before power off */
+		if (!err)
+			mmc_delay(2);
+	} else if (mmc_can_sleep(host->card))
 		err = mmc_sleep(host);
 	else if (!mmc_host_is_spi(host))
 		err = mmc_deselect_cards(host);

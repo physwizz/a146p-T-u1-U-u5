@@ -158,6 +158,8 @@ static void tianma_panel_init(struct tianma *ctx)
 	tianma_dcs_write_seq_static(ctx, 0xC7, 0x05);
 	tianma_dcs_write_seq_static(ctx, 0xFF, 0x78, 0x07, 0x07);
 	tianma_dcs_write_seq_static(ctx, 0x11, 0x16);
+	tianma_dcs_write_seq_static(ctx, 0x82, 0x20);
+	pr_info("%s tianma: write 0x82 value to 0x20 in kernel init\n", __func__);
 	tianma_dcs_write_seq_static(ctx, 0xFF, 0x78, 0x07, 0x00);
 	//tianma_dcs_write_seq_static(ctx, 0x51, 0x0F,0xFF);
 	tianma_dcs_write_seq_static(ctx, 0x53, 0x2C);
@@ -215,7 +217,6 @@ static int tianma_unprepare(struct drm_panel *panel)
 	
 	ili_sleep_handler(1);
 	printk("[ILITEK]ilitek_suspend in tianma-unprepare\n ");
-
 	usleep_range(6000, 6001);
 	tianma_dcs_write_seq_static(ctx, MIPI_DCS_SET_DISPLAY_OFF);
 	msleep(20);
@@ -427,7 +428,9 @@ static int tianma_setbacklight_cmdq(void *dsi, dcs_write_gce cb, void *handle,
 				 unsigned int level)
 {
 	char bl_tb0[] = {0x51, 0x0f, 0xff,0x00};
-
+	//+S96901AA4-194 liuxueyou.wt, 20231016, add, screen backlight flashing during sleep
+	char bl_tb1[] = {0x53, 0x24,0x00,0x00};
+	char bl_tb2[] = {0x53, 0x2c,0x00,0x00};
 	pr_info("%s backlight = -%d\n", __func__, level);
 	if (level > 255)
 		level = 255;
@@ -441,7 +444,12 @@ static int tianma_setbacklight_cmdq(void *dsi, dcs_write_gce cb, void *handle,
 		return -1;
 
 	cb(dsi, handle, bl_tb0, ARRAY_SIZE(bl_tb0));
-
+	if(level == 0){
+		cb(dsi, handle, bl_tb1, ARRAY_SIZE(bl_tb1));
+	}else if(last_brightness == 0 && level > 0){
+		cb(dsi, handle, bl_tb2, ARRAY_SIZE(bl_tb2));
+	}
+	//-S96901AA4-194 liuxueyou.wt, 20231016, add, screen backlight flashing during sleep
 	last_brightness = level;
 
 	return 0;
@@ -688,39 +696,10 @@ static int tianma_remove(struct mipi_dsi_device *dsi)
 
 static void tianma_panel_shutdown(struct mipi_dsi_device *dsi)
 {
-	pr_info("ili7807s%s++\n", __func__);
-
-	struct device *dev = &dsi->dev;
-	struct tianma *ctx;
-	ctx = devm_kzalloc(dev, sizeof(struct tianma), GFP_KERNEL);
-	if (!ctx)
-		pr_info("%s- wt,tianma,ili7807s,cphy,vdo,90hz ,devm_kzalloc space fail\n", __func__);
-
-	mipi_dsi_set_drvdata(dsi, ctx);
-
-	ctx->dev = dev;
-	if((gestrue_status == 1) || (gestrue_spay == 1))
-	{
-		pr_info("ili7807s-gestrue_status == 1  ||  gestrue_spay == 1-%s++\n", __func__);
-
-		ctx->reset_gpio = devm_gpiod_get(ctx->dev, "reset", GPIOD_OUT_HIGH);
-		gpiod_set_value(ctx->reset_gpio, 0);
-		devm_gpiod_put(ctx->dev, ctx->reset_gpio);
-
-		usleep_range(2000, 2001);
-
-		ctx->bias_neg = devm_gpiod_get_index(ctx->dev, "bias", 1, GPIOD_OUT_HIGH);
-		gpiod_set_value(ctx->bias_neg, 0);
-		devm_gpiod_put(ctx->dev, ctx->bias_neg);
-
-		usleep_range(2000, 2001);
-
-		ctx->bias_pos = devm_gpiod_get_index(ctx->dev, "bias", 0, GPIOD_OUT_HIGH);
-		gpiod_set_value(ctx->bias_pos, 0);
-		devm_gpiod_put(ctx->dev, ctx->bias_pos);
-
-		usleep_range(2000, 2001);
-	}
+	pr_info("ili7807s tianma%s++\n", __func__);
+	gestrue_status = 0;
+	gestrue_spay = 0;
+	pr_info("optimize shutdown sequence gestrue_status gestrue_spay is 0 %s++\n", __func__);
 }
 
 static const struct of_device_id tianma_of_match[] = {

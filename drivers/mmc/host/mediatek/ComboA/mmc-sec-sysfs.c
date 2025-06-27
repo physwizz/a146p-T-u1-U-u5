@@ -68,6 +68,51 @@ static ssize_t mmc_gen_unique_number_show(struct device *dev,
 	return n;
 }
 
+static ssize_t error_count_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct mmc_host *host = dev_get_drvdata(dev);
+	struct mmc_card *card = host->card;
+	struct mmc_card_error_log *err_log;
+	u64 total_c_cnt = 0;
+	u64 total_t_cnt = 0;
+	int total_len = 0;
+	int i = 0;
+
+	if (!card) {
+		total_len = snprintf(buf, PAGE_SIZE, "no card\n");
+		goto out;
+	}
+
+	err_log = card->err_log;
+
+	total_len += snprintf(buf, PAGE_SIZE,
+			"type: err    status: first_issue_time:  last_issue_time:      count\n");
+
+	for (i = 0; i < MAX_ERR_LOG_INDEX; i++) {
+		total_len += snprintf(buf + total_len, PAGE_SIZE - total_len,
+				"%5s:%4d 0x%08x %16llu, %16llu, %10d\n",
+				err_log[i].type, err_log[i].err_type,
+				err_log[i].status,
+				err_log[i].first_issue_time,
+				err_log[i].last_issue_time,
+				err_log[i].count);
+	}
+
+	mmc_check_error_count(err_log, &total_c_cnt, &total_t_cnt);
+
+	total_len += snprintf(buf + total_len, PAGE_SIZE - total_len,
+			"GE:%d,CC:%d,ECC:%d,WP:%d,OOR:%d,CRC:%lld,TMO:%lld,"
+			"HALT:%d,CQEN:%d,RPMB:%d,RST:%d\n",
+			err_log[0].ge_cnt, err_log[0].cc_cnt, err_log[0].ecc_cnt,
+			err_log[0].wp_cnt, err_log[0].oor_cnt, total_c_cnt, total_t_cnt,
+			err_log[0].halt_cnt, err_log[0].cq_cnt, err_log[0].rpmb_cnt,
+			err_log[0].hw_rst_cnt);
+
+out:
+	return total_len;
+}
+
 static ssize_t sdcard_status_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -178,6 +223,7 @@ out:
 }
 
 static DEVICE_ATTR(un, 0440, mmc_gen_unique_number_show, NULL);
+static DEVICE_ATTR(err_count, 0444, error_count_show, NULL);
 
 static DEVICE_ATTR(status, 0444, sdcard_status_show, NULL);
 
@@ -187,6 +233,7 @@ static DEVICE_ATTR(sd_count, 0444, sd_count_show, NULL);
 
 static struct attribute *mmc_attributes[] = {
 	&dev_attr_un.attr,
+	&dev_attr_err_count.attr,
 	NULL,
 };
 
@@ -196,6 +243,7 @@ static struct attribute_group mmc_attr_group = {
 
 static struct attribute *sdcard_attributes[] = {
 	&dev_attr_status.attr,
+	&dev_attr_err_count.attr,
 	NULL,
 };
 

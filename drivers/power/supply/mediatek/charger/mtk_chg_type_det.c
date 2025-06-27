@@ -46,7 +46,10 @@
 #include <tcpci_core.h>
 
 #include "mtk_charger_intf.h"
+
+#if defined(CONFIG_WT_PROJECT_S96902AA1) || defined(CONFIG_WT_PROJECT_S96901AA1) || defined(CONFIG_WT_PROJECT_S96901WA1)
 #include <../../../misc/mediatek/leds/leds-mtk-disp.h>
+#endif
 //zhaosidong.wt, power swap without usb disconnect
 bool g_ignore_usb;
 #ifdef CONFIG_MT6360_PMU_CHARGER
@@ -215,16 +218,30 @@ static int mt_charger_online(struct mt_charger *mtk_chg)
 		//boot_mode = get_boot_mode();
 		if (boot_mode == KERNEL_POWER_OFF_CHARGING_BOOT ||
 		    boot_mode == LOW_POWER_OFF_CHARGING_BOOT) {
+/*+P230715-01490,zhouxiaopeng2.wt,MODIFY,20230729,PD cannot charge when shutdown*/
+#ifdef CONFIG_N28_CHARGER_PRIVATE
+			struct charger_manager *pinfo = cti->chg_consumer->cm;
+			if (pinfo->pd_reset) {
+				pr_notice("%s: stay charging for pd_reset\n", __func__);
+				return ret;
+			}
+#endif
+/*-P230715-01490,zhouxiaopeng2.wt,MODIFY,20230729,PD cannot charge when shutdown*/
 			pr_notice("%s: Unplug Charger/USB\n", __func__);
 #ifdef CONFIG_KPOC_GET_SOURCE_CAP_TRY
-			pr_info("%s error_recovery_once = %d\n", __func__,
-				cti->tcpc->pd_port.error_recovery_once);
-			if (cti->tcpc->pd_port.error_recovery_once != 1) {
+			if(cti->tcpc == NULL)
+				pr_err("%s: cti->tcpc is null\n", __func__);
+			else
+				pr_info("%s error_recovery_once = %d\n", __func__,
+					cti->tcpc->pd_port.error_recovery_once);
+			if (cti->tcpc == NULL || (cti->tcpc != NULL && cti->tcpc->pd_port.error_recovery_once != 1)) {
 #endif /*CONFIG_KPOC_GET_SOURCE_CAP_TRY*/
 				pr_notice("%s: system_state=%d\n", __func__,
 					system_state);
 				if (system_state != SYSTEM_POWER_OFF) {
+#if defined(CONFIG_WT_PROJECT_S96902AA1) || defined(CONFIG_WT_PROJECT_S96901AA1) || defined(CONFIG_WT_PROJECT_S96901WA1)
 					mt_leds_brightness_set("lcd-backlight", 0);
+#endif
 					msleep(200);
 					kernel_power_off();
 				}
@@ -469,7 +486,11 @@ static int mt_usb_get_property(struct power_supply *psy,
 			val->intval = 6;
 		}
 		else if ((mtk_chg->chg_type == STANDARD_CHARGER) ||(mtk_chg->chg_type == NONSTANDARD_CHARGER ) ){
+			#ifdef CONFIG_AFC_CHARGER
 			if (mtk_is_pep_series_connect(cm) ||mtk_pdc_check_charger(cm) || afc_get_is_connect(cm))
+			#else
+			if (mtk_is_pep_series_connect(cm) ||mtk_pdc_check_charger(cm))
+			#endif
 			//	val->strval = "USB_HVDCP";
 				val->intval = 12;
 			else
@@ -515,7 +536,9 @@ static enum power_supply_property mt_usb_properties[] = {
 static void tcpc_power_off_work_handler(struct work_struct *work)
 {
 	pr_info("%s\n", __func__);
+#if defined(CONFIG_WT_PROJECT_S96902AA1) || defined(CONFIG_WT_PROJECT_S96901AA1) || defined(CONFIG_WT_PROJECT_S96901WA1)
 	mt_leds_brightness_set("lcd-backlight", 0);
+#endif
 	msleep(200);
 	kernel_power_off();
 }
@@ -613,9 +636,12 @@ static int pd_tcp_notifier_call(struct notifier_block *pnb,
 			plug_in_out_handler(cti, false, false);
 			if (cti->tcpc_kpoc) {
 #ifdef CONFIG_KPOC_GET_SOURCE_CAP_TRY
-				pr_info("%s error_recovery_once = %d\n", __func__,
-					cti->tcpc->pd_port.error_recovery_once);
-				if (cti->tcpc->pd_port.error_recovery_once == 1) {
+				if(cti->tcpc == NULL)
+					pr_err("%s: cti->tcpc is null\n", __func__);
+				else
+					pr_info("%s error_recovery_once = %d\n", __func__,
+						cti->tcpc->pd_port.error_recovery_once);
+				if (cti->tcpc == NULL || (cti->tcpc != NULL && cti->tcpc->pd_port.error_recovery_once == 1)) {
 					pr_info("%s KPOC error recovery once\n",
 					__func__);
 					plug_in_out_handler(cti, false, false);

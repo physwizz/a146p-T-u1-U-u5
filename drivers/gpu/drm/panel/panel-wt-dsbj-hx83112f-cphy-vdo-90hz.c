@@ -38,7 +38,7 @@
 #include "lcm_cust_common.h"
 
 extern u8 rec_esd;				//ESD recover flag global value
-
+extern int lcm_vsn_flag;		//-S96901AA4-1584, liuxueyou.wt, 20231103, add, Flash screen when reboot
 struct dsbj {
 	struct device *dev;
 	struct drm_panel panel;
@@ -52,6 +52,8 @@ struct dsbj {
 
 	int error;
 };
+
+extern bool is_kernel_power_off_charging(void);
 
 #define dsbj_dcs_write_seq(ctx, seq...)                                  \
 	({                                                              \
@@ -285,6 +287,7 @@ static int dsbj_unprepare(struct drm_panel *panel)
 #endif
 		ctx->bias_neg = devm_gpiod_get_index(ctx->dev, "bias", 1, GPIOD_OUT_HIGH);
 		gpiod_set_value(ctx->bias_neg, 0);
+
 		devm_gpiod_put(ctx->dev, ctx->bias_neg);
 		usleep_range(2000, 2001);
 
@@ -327,6 +330,10 @@ static int dsbj_prepare(struct drm_panel *panel)
 	usleep_range(4000, 4001);
 	ctx->bias_neg = devm_gpiod_get_index(ctx->dev, "bias", 1, GPIOD_OUT_HIGH);
 	gpiod_set_value(ctx->bias_neg, 1);
+	//+S96901AA4-1584, liuxueyou.wt, 20231103, add, Flash screen when reboot
+	lcm_vsn_flag = 1;
+	pr_info("prepare dsbj_ lcm_vsn_flag = %d\n",lcm_vsn_flag);
+	//-S96901AA4-1584, liuxueyou.wt, 20231103, add, Flash screen when reboot
 	devm_gpiod_put(ctx->dev, ctx->bias_neg);
 	_lcm_i2c_write_bytes(AVDD_REG, 0xf);
 	_lcm_i2c_write_bytes(AVEE_REG, 0xf);
@@ -470,7 +477,9 @@ static int dsbj_setbacklight_cmdq(void *dsi, dcs_write_gce cb, void *handle,
 		unsigned int level)
 {
 	char bl_tb0[] = {0x51, 0x0f, 0xff,0x00};
-
+	//+S96901AA4-194 liuxueyou.wt, 20231016, add, screen backlight flashing during sleep
+	char bl_tb1[] = {0x53, 0x24,0x00,0x00};
+	char bl_tb2[] = {0x53, 0x2c,0x00,0x00};
 	pr_info("%s hx83112f backlight = -%d\n", __func__, level);
 	if (level > 255)
 		level = 255;
@@ -484,7 +493,12 @@ static int dsbj_setbacklight_cmdq(void *dsi, dcs_write_gce cb, void *handle,
 		return -1;
 
 	cb(dsi, handle, bl_tb0, ARRAY_SIZE(bl_tb0));
-
+	if(level == 0){
+		cb(dsi, handle, bl_tb1, ARRAY_SIZE(bl_tb1));
+	}else if(last_brightness == 0 && level > 0){
+		cb(dsi, handle, bl_tb2, ARRAY_SIZE(bl_tb2));
+	}
+	//-S96901AA4-194 liuxueyou.wt, 20231016, add, screen backlight flashing during sleep
 	last_brightness = level;
 
 	return 0;
@@ -733,38 +747,19 @@ static int dsbj_remove(struct mipi_dsi_device *dsi)
 
 static void dsbj_panel_shutdown(struct mipi_dsi_device *dsi)
 {
-	pr_info("hx83112f%s++\n", __func__);
+	struct dsbj *ctx = mipi_dsi_get_drvdata(dsi);
 
-	struct device *dev = &dsi->dev;
-	struct dsbj *ctx;
-	ctx = devm_kzalloc(dev, sizeof(struct dsbj), GFP_KERNEL);
-	if (!ctx)
-		pr_info("%s- wt,dsbj,hx83112f,cphy,vdo,90hz ,devm_kzalloc space fail\n", __func__);
-
-	mipi_dsi_set_drvdata(dsi, ctx);
-
-	ctx->dev = dev;
-	if(himax_gesture_status == 1) {
-		pr_info("gestrue_status == 1  ||  gestrue_spay == 1-%s++\n", __func__);
-
-		ctx->reset_gpio = devm_gpiod_get(ctx->dev, "reset", GPIOD_OUT_HIGH);
-		gpiod_set_value(ctx->reset_gpio, 0);
-		devm_gpiod_put(ctx->dev, ctx->reset_gpio);
-
-		usleep_range(2000, 2001);
-
-		ctx->bias_neg = devm_gpiod_get_index(ctx->dev, "bias", 1, GPIOD_OUT_HIGH);
-		gpiod_set_value(ctx->bias_neg, 0);
-		devm_gpiod_put(ctx->dev, ctx->bias_neg);
-
-		usleep_range(2000, 2001);
-
-		ctx->bias_pos = devm_gpiod_get_index(ctx->dev, "bias", 0, GPIOD_OUT_HIGH);
-		gpiod_set_value(ctx->bias_pos, 0);
-		devm_gpiod_put(ctx->dev, ctx->bias_pos);
-
-		usleep_range(2000, 2001);
+	pr_info("hx83112f dsbj%s++\n", __func__);
+	if(true == is_kernel_power_off_charging()) {
+		//+S96901AA4-1584, liuxueyou.wt, 20231103, add, Flash screen when reboot
+		lcm_vsn_flag = 0;
+		pr_info("dsbj_ lcm_vsn_flag = %d\n",lcm_vsn_flag);
+		//-S96901AA4-1584, liuxueyou.wt, 20231103, add, Flash screen when reboot
+		dsbj_unprepare(&ctx->panel);
+		pr_info("WT_LCD,is_kernel_power_off_charging is true\n");
 	}
+	himax_gesture_status = 0;
+	pr_info("optimize shutdown sequence himax_gesture_status is 0 %s++\n", __func__);
 }
 
 static const struct of_device_id dsbj_of_match[] = {

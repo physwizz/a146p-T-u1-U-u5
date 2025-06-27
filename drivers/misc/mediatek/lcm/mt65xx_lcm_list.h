@@ -352,6 +352,22 @@ extern struct LCM_DRIVER ili9882q_dsi_vdo_hdp_ctc_txd_drv;
 extern struct LCM_DRIVER ili9882q10_dsi_vdo_hdp_ctc_txd_drv;
 extern struct LCM_DRIVER incl9911c_dsi_vdo_hdp_huajiacai_dijing_drv;
 extern struct LCM_DRIVER ft8006s_dsi_vdo_hdp_boe_skyworth_drv;
+extern struct LCM_DRIVER n28_icnl9911c_dsi_vdo_hdp_txd_inx_drv;
+extern struct LCM_DRIVER n28_nt36528_dsi_vdo_hdp_truly_truly_drv;
+//+S96818AA1-1936,liuzhizun2.wt,add,2023/05/16,ft8057s lcd bringup
+extern struct LCM_DRIVER n28_ft8057s_dsi_vdo_hdp_dsbj_mantix_drv;
+//-S96818AA1-1936,liuzhizun2.wt,add,2023/05/16,ft8057s lcd bringup
+//+S96818AA1-1936,liuzhizun2.wt,add,2023/05/15,td4160 lcd bringup
+extern struct LCM_DRIVER n28_td4160_dsi_vdo_hdp_xinxian_inx_drv;
+//-S96818AA1-1936,liuzhizun2.wt,add,2023/05/15,td4160 lcd bringup
+extern struct LCM_DRIVER n28_gc7272_dsi_vdo_hdp_txd_sharp_drv;
+extern struct LCM_DRIVER n28_nt36528_dsi_vdo_hdp_txd_sharp_drv;
+extern struct LCM_DRIVER n28_gc7272_dsi_vdo_hdp_xinxian_hkc_drv;
+extern struct LCM_DRIVER n28_td4160_dsi_vdo_hdp_boe_boe_drv;
+extern struct LCM_DRIVER n28_icnl9916c_dsi_vdo_hdp_xinxian_hkc_drv;
+//+S96818AA1-1936,liyuhong1.wt,add,2023/08/22,icnl9916c lcd bringup
+extern struct LCM_DRIVER n28_icnl9916c_dsi_vdo_hdp_dsbj_mdt_drv;
+//-S96818AA1-1936,liyuhong1.wt,add,2023/08/22,icnl9916c lcd bringup
 #ifdef BUILD_LK
 extern void mdelay(unsigned long msec);
 #endif
